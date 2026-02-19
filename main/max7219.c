@@ -167,20 +167,65 @@ void max7219_init(void)
     ESP_LOGI(TAG, "Initialised %d module(s)", MAX7219_NUM_MODULES);
 }
 
-void max7219_set_digit(uint8_t module, uint8_t digit)
+void max7219_put_digit(uint8_t module, uint8_t digit)
 {
     if (module >= MAX7219_NUM_MODULES || digit > 9) return;
-
-    // Rows 0 and 7 stay 0 (top and bottom blank lines).
-    // Font rows 0-5 map to display rows 1-6 (fb indices 1-6).
+    // Font rows 0-5 map to fb rows 1-6 (leaves row 0 and row 7 untouched).
     for (int i = 0; i < 6; i++) {
         fb[module][i + 1] = FONT[digit][i];
     }
+}
 
-    // Push only the 6 dirty rows (registers 2-7) to keep it fast.
+void max7219_refresh_digits(void)
+{
+    // Flush only the digit rows (registers 2-7) in one pass.
     for (uint8_t r = 2; r <= 7; r++) {
         flush_row(r);
     }
+}
+
+void max7219_set_digit(uint8_t module, uint8_t digit)
+{
+    max7219_put_digit(module, digit);
+    max7219_refresh_digits();
+}
+
+// ---------------------------------------------------------------------------
+// Seconds progress bar on the bottom row (register 8 = fb[][7]).
+//
+// 32 LEDs span the bottom row of all 4 modules.  We use LEDs 1-30.
+//
+// LED numbering (1 = leftmost):
+//   LED 1-8   -> module 0, bits 7-0
+//   LED 9-16  -> module 1, bits 7-0
+//   LED 17-24 -> module 2, bits 7-0
+//   LED 25-32 -> module 3, bits 7-0
+// ---------------------------------------------------------------------------
+void max7219_set_seconds_bar(uint8_t second)
+{
+    uint8_t first_led, last_led;
+
+    if (second == 0) {
+        first_led = 1; last_led = 0;       // nothing lit
+    } else if (second <= 30) {
+        first_led = 1; last_led = second;  // fill left→right
+    } else {
+        // right edge fixed at 30, left edge retreats right
+        // 31→[2,30]  32→[3,30] … 59→[30,30]
+        first_led = second - 29; last_led = 30;
+    }
+
+    for (int m = 0; m < MAX7219_NUM_MODULES; m++) {
+        uint8_t row_byte = 0;
+        for (int bit = 7; bit >= 0; bit--) {
+            uint8_t led = (uint8_t)(m * 8 + (7 - bit) + 1); // 1-indexed
+            if (led >= first_led && led <= last_led) {
+                row_byte |= (uint8_t)(1 << bit);
+            }
+        }
+        fb[m][7] = row_byte;
+    }
+    flush_row(8); // register 8 = bottom row
 }
 
 void max7219_clear_all(void)
