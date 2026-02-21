@@ -1,5 +1,6 @@
 #include <time.h>
 #include <sys/time.h>
+#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -29,8 +30,8 @@ static bool                    s_rtc_ok    = false;
 // ---------------------------------------------------------------------------
 typedef enum {
     SCENE_CLOCK = 0,
-    // SCENE_TEMPERATURE,   // example future scene
-    // SCENE_STOPWATCH,     // example future scene
+    SCENE_SCROLL,    // digits slide: old moves down, new enters from above
+    SCENE_EXPLODE,   // digit shrinks to dot, explodes outward, new digit appears
     SCENE_COUNT
 } scene_t;
 
@@ -47,6 +48,21 @@ static scene_t  g_scene   = SCENE_CLOCK;
 static appst_t  g_state   = APPST_NORMAL;
 static int      g_set_h   = 12;
 static int      g_set_m   = 0;
+
+// ---------------------------------------------------------------------------
+// Animation state (used by SCENE_SCROLL and SCENE_EXPLODE)
+// ---------------------------------------------------------------------------
+typedef struct {
+    bool    active;
+    uint8_t old_digit;   // 0-9 or MAX7219_BLANK
+    uint8_t new_digit;   // 0-9 or MAX7219_BLANK
+    int     frame;       // 1-based frame index
+    int     tick;        // render-tick counter within current frame (0..ANIM_TICKS_PER_FRAME-1)
+} mod_anim_t;
+
+static mod_anim_t s_anim[MAX7219_NUM_MODULES];
+static uint8_t    s_displayed[MAX7219_NUM_MODULES]; // digit currently tracked on each module
+static bool       s_anim_initialised = false;       // false forces a silent init on first render
 
 // ---------------------------------------------------------------------------
 // RTC helpers
@@ -170,6 +186,86 @@ static void render_time(int hour24, int minute, bool colon_on,
     max7219_refresh_digits();
 }
 
+// Render the animated clock scene (SCENE_SCROLL or SCENE_EXPLODE).
+// Called every render tick (50 ms).  Each animation frame is held for
+// ANIM_TICKS_PER_FRAME ticks before advancing.  The colon blinks on the
+// real second boundary and the seconds bar runs normally.
+static void render_animated(void)
+{
+    time_t    now;
+    struct tm ti;
+    time(&now);
+    localtime_r(&now, &ti);
+
+    int hour12 = ti.tm_hour % 12;
+    if (hour12 == 0) hour12 = 12;
+
+    uint8_t want[MAX7219_NUM_MODULES];
+    want[0] = (hour12 >= 10) ? (uint8_t)(hour12 / 10) : MAX7219_BLANK;
+    want[1] = (uint8_t)(hour12 % 10);
+    want[2] = (uint8_t)(ti.tm_min / 10);
+    want[3] = (uint8_t)(ti.tm_min % 10);
+
+    bool    colon_on = (ti.tm_sec % 2 == 0);
+    uint8_t sec      = (uint8_t)ti.tm_sec;
+
+    // First call after a scene switch: show current time immediately, no animation.
+    if (!s_anim_initialised) {
+        memcpy(s_displayed, want, sizeof(want));
+        memset(s_anim, 0, sizeof(s_anim));
+        s_anim_initialised = true;
+        for (int m = 0; m < MAX7219_NUM_MODULES; m++) {
+            if (s_displayed[m] == MAX7219_BLANK) max7219_put_blank(m);
+            else                                 max7219_put_digit(m, s_displayed[m]);
+        }
+        max7219_set_colon(colon_on);
+        max7219_refresh_digits();
+        max7219_set_seconds_bar(sec);
+        return;
+    }
+
+    // Start a new animation for any module whose digit has changed.
+    for (int m = 0; m < MAX7219_NUM_MODULES; m++) {
+        if (!s_anim[m].active && want[m] != s_displayed[m]) {
+            s_anim[m].active    = true;
+            s_anim[m].old_digit = s_displayed[m];
+            s_anim[m].new_digit = want[m];
+            s_anim[m].frame     = 1;
+            s_anim[m].tick      = 0;
+            s_displayed[m]      = want[m];
+        }
+    }
+
+    int max_frames = (g_scene == SCENE_SCROLL) ? ANIM_FRAMES_SCROLL : ANIM_FRAMES_EXPLODE;
+
+    for (int m = 0; m < MAX7219_NUM_MODULES; m++) {
+        if (s_anim[m].active) {
+            // Render the current frame (re-drawn every tick while it is held).
+            if (g_scene == SCENE_SCROLL) {
+                max7219_anim_scroll(m, s_anim[m].old_digit, s_anim[m].new_digit, s_anim[m].frame);
+            } else {
+                max7219_anim_explode(m, s_anim[m].old_digit, s_anim[m].new_digit, s_anim[m].frame);
+            }
+            // Advance to the next frame only after ANIM_TICKS_PER_FRAME ticks.
+            if (++s_anim[m].tick >= ANIM_TICKS_PER_FRAME) {
+                s_anim[m].tick = 0;
+                s_anim[m].frame++;
+                if (s_anim[m].frame > max_frames) {
+                    s_anim[m].active = false;
+                }
+            }
+        } else {
+            // No animation — paint the current digit.
+            if (s_displayed[m] == MAX7219_BLANK) max7219_put_blank(m);
+            else                                  max7219_put_digit(m, s_displayed[m]);
+        }
+    }
+
+    max7219_set_colon(colon_on);
+    max7219_refresh_digits();
+    max7219_set_seconds_bar(sec);
+}
+
 static void render(bool blink_on)
 {
     time_t    now;
@@ -204,7 +300,10 @@ static void render(bool blink_on)
             }
             break;
 
-        // ---- Add future scene rendering here ----
+        case SCENE_SCROLL:
+        case SCENE_EXPLODE:
+            render_animated();
+            break;
     }
 }
 
@@ -236,6 +335,7 @@ static void handle_button(btn_event_t evt)
             if (evt == BTN_EVT_MODE_SHORT) {
                 // Advance to the next scene (wraps around)
                 g_scene = (scene_t)((g_scene + 1) % SCENE_COUNT);
+                s_anim_initialised = false;   // reset animation state for new scene
                 max7219_clear_all();
                 ESP_LOGI(TAG, "Scene → %d", g_scene);
             }
@@ -317,7 +417,7 @@ static void render_task(void *arg)
 
         render(blink_on);
 
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 

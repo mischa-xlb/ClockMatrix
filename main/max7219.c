@@ -283,3 +283,114 @@ void max7219_set_intensity(uint8_t intensity)
     if (intensity > 15) intensity = 15;
     max7219_write_all(REG_INTENSITY, intensity);
 }
+
+// ---------------------------------------------------------------------------
+// Animation helpers — write into the frame buffer for one module.
+// Caller must call max7219_refresh_digits() after updating all modules.
+// ---------------------------------------------------------------------------
+
+// Scroll: old digit slides down off the bottom, new digit enters from the top.
+//
+// Font rows 0-5 normally map to fb rows 1-6.
+// At frame f (1..ANIM_FRAMES_SCROLL):
+//   old digit row i -> fb row (1 + f + i)   [slides down by f]
+//   new digit row i -> fb row (f - 5 + i)   [enters from above]
+//
+// old_digit / new_digit may be MAX7219_BLANK (10) to suppress rendering.
+void max7219_anim_scroll(uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame)
+{
+    if (module >= MAX7219_NUM_MODULES) return;
+
+    // Clear digit rows
+    for (int r = 1; r <= 6; r++) fb[module][r] = 0;
+
+    // Old digit sliding down
+    if (old_digit <= 9) {
+        for (int i = 0; i < 6; i++) {
+            int fb_row = 1 + frame + i;
+            if (fb_row >= 1 && fb_row <= 6) {
+                fb[module][fb_row] = FONT[old_digit][i];
+            }
+        }
+    }
+
+    // New digit entering from above
+    if (new_digit <= 9) {
+        for (int i = 0; i < 6; i++) {
+            int fb_row = frame - 5 + i;
+            if (fb_row >= 1 && fb_row <= 6) {
+                fb[module][fb_row] |= FONT[new_digit][i];
+            }
+        }
+    }
+}
+
+// Explode: old digit shrinks to a dot then bursts outward in concentric rings.
+//
+// Pixel columns use bits [6:2]: bit6=left, bit5, bit4=centre(0x10), bit3, bit2=right.
+// Digit occupies fb rows 1-6 (6 tall); vertical centre is between rows 3-4.
+//
+// Frame 1: shrink to 4 rows  — font rows 1-4 at fb rows 2-5
+// Frame 2: shrink to 2 rows  — font rows 2-3 at fb rows 3-4
+// Frame 3: dot               — centre column (0x10) at rows 3,4
+// Frame 4: ring 1            — rows 2,5 = 0x10 ; rows 3,4 = 0x28 (±1 col)
+// Frame 5: ring 2            — rows 1,6 = 0x10 ; rows 2,5 = 0x28 ; rows 3,4 = 0x44 (±2 col)
+// Frame 6: ring 3 (corners)  — rows 1,6 = 0x44
+// Frame 7: blank             — new digit shown by caller on next tick
+void max7219_anim_explode(uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame)
+{
+    if (module >= MAX7219_NUM_MODULES) return;
+    (void)new_digit; // new digit is shown by the caller after the animation ends
+
+    // Clear digit rows
+    for (int r = 1; r <= 6; r++) fb[module][r] = 0;
+
+    switch (frame) {
+        case 1: // shrink to 4 rows (font rows 1-4 → fb rows 2-5)
+            if (old_digit <= 9) {
+                for (int i = 1; i <= 4; i++) {
+                    fb[module][i + 1] = FONT[old_digit][i];
+                }
+            }
+            break;
+
+        case 2: // shrink to 2 rows (font rows 2-3 → fb rows 3-4)
+            if (old_digit <= 9) {
+                fb[module][3] = FONT[old_digit][2];
+                fb[module][4] = FONT[old_digit][3];
+            }
+            break;
+
+        case 3: // dot — centre column only
+            fb[module][3] = 0x10;
+            fb[module][4] = 0x10;
+            break;
+
+        case 4: // ring 1
+            fb[module][2] = 0x10;
+            fb[module][3] = 0x28;
+            fb[module][4] = 0x28;
+            fb[module][5] = 0x10;
+            break;
+
+        case 5: // ring 2
+            fb[module][1] = 0x10;
+            fb[module][2] = 0x28;
+            fb[module][3] = 0x44;
+            fb[module][4] = 0x44;
+            fb[module][5] = 0x28;
+            fb[module][6] = 0x10;
+            break;
+
+        case 6: // ring 3 — corner pixels only
+            fb[module][1] = 0x44;
+            fb[module][6] = 0x44;
+            break;
+
+        case 7: // blank — next tick will show the new digit
+            break;
+
+        default:
+            break;
+    }
+}

@@ -240,7 +240,10 @@ bool wifi_manager_connect_sta(void)
 
     if (bits & BIT_CONNECTED) {
         ESP_LOGI(TAG, "Connected to %s", ssid);
-        vEventGroupDelete(s_wifi_events);
+        // Do NOT delete s_wifi_events here — the event handlers remain
+        // registered and will call xEventGroupSetBits() on it if WiFi
+        // drops and retries.  Deleting it now would leave a dangling pointer
+        // and crash the device on the next disconnect event.
         return true;
     }
 

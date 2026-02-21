@@ -41,3 +41,22 @@ void max7219_clear_all(void);
 // Set brightness of all modules.
 // intensity: 0 (dimmest) to 15 (brightest)
 void max7219_set_intensity(uint8_t intensity);
+
+// Sentinel value for max7219_put_digit / animation functions: module shows blank.
+#define MAX7219_BLANK 10
+
+// Number of frames for each animation type (at 50 ms per frame).
+#define ANIM_FRAMES_SCROLL  6   // 300 ms: old digit slides down, new slides in from above
+#define ANIM_FRAMES_EXPLODE 7   // 350 ms: shrink → dot → explosion rings → blank
+
+// Render one frame of the scroll animation into the frame buffer for `module`.
+// old_digit / new_digit: 0-9 or MAX7219_BLANK.
+// frame: 1 .. ANIM_FRAMES_SCROLL  (caller advances each render tick).
+// Does NOT flush to hardware — call max7219_refresh_digits() afterwards.
+void max7219_anim_scroll(uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame);
+
+// Render one frame of the explode animation into the frame buffer for `module`.
+// old_digit / new_digit: 0-9 or MAX7219_BLANK.
+// frame: 1 .. ANIM_FRAMES_EXPLODE.
+// Does NOT flush to hardware — call max7219_refresh_digits() afterwards.
+void max7219_anim_explode(uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame);

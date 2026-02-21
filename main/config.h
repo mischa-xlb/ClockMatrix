@@ -79,9 +79,11 @@
 //   BTN_MODE short press : next field in time-set, or next scene in clock mode
 //   BTN_MODE long press  : cancel time-set without saving
 // ---------------------------------------------------------------------------
-#define BTN_WIFI_PIN   33   // safe on ESP32 (was GPIO 8, a flash pin on classic ESP32)
-#define BTN_MODE_PIN   3   // safe on ESP32 (was GPIO 9, a flash pin on classic ESP32)
-
+#define BTN_WIFI_PIN   25   // GPIO 25 — supports internal pull-up on classic ESP32
+#define BTN_MODE_PIN   32   //
+// NOTE: GPIO 34-39 on classic ESP32 are input-only pads with NO hardware
+// pull-up/pull-down support.  Using them for buttons causes the pin to float,
+// which can trigger false long-press events (WiFi reset / reboot loop).
 // ---------------------------------------------------------------------------
 // Light-dependent resistor (LDR) — automatic brightness control
 // Wiring: LDR between 3.3 V and ADC pin; 10 kΩ resistor between ADC pin and GND.
@@ -92,3 +94,12 @@
 #define LDR_INVERT       1
 #define BRIGHTNESS_MIN   1     // minimum intensity at night  (0–15)
 #define BRIGHTNESS_MAX   12    // maximum intensity in daylight (0–15)
+
+// ---------------------------------------------------------------------------
+// Animation speed
+// Number of 50 ms render ticks to hold each animation frame.
+//   1 = 50 ms/frame  (fastest: scroll 300 ms, explode 350 ms)
+//   2 = 100 ms/frame (scroll 600 ms, explode 700 ms)
+//   3 = 150 ms/frame (scroll 900 ms, explode 1050 ms)
+// ---------------------------------------------------------------------------
+#define ANIM_TICKS_PER_FRAME  10
