@@ -303,3 +303,15 @@ void wifi_manager_start_portal(void)
     vTaskDelay(pdMS_TO_TICKS(2000)); // give the browser time to receive the response
     esp_restart();
 }
+
+void wifi_manager_reset_credentials(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_erase_all(h);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+    ESP_LOGI(TAG, "WiFi credentials erased — rebooting to portal");
+    esp_restart();
+}

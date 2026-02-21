@@ -24,10 +24,13 @@ void time_sync_init(void)
 
 bool time_sync_wait(uint32_t timeout_ms)
 {
-    uint32_t elapsed = 0;
+    // Give the SNTP client a moment to send its first request before polling.
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    uint32_t elapsed = 1000;
     while (sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED) {
         if (elapsed >= timeout_ms) {
-            ESP_LOGW(TAG, "Timed out waiting for NTP sync");
+            ESP_LOGW(TAG, "Timed out waiting for NTP sync — will retry in background");
             return false;
         }
         vTaskDelay(pdMS_TO_TICKS(500));

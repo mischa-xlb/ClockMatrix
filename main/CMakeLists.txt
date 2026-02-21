@@ -4,12 +4,17 @@ idf_component_register(
         "max7219.c"
         "wifi_manager.c"
         "time_sync.c"
+        "inputs.c"
     INCLUDE_DIRS "."
     REQUIRES
+        driver
+        esp_adc
         nvs_flash
         esp_wifi
         esp_netif
         esp_event
         esp_http_server
+        esp_timer
         lwip
+        ds3231_rtc
 )

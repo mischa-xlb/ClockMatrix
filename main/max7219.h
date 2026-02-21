@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // Initialise SPI bus and all MAX7219 modules in the chain.
 // Must be called once before any other max7219_* function.
@@ -15,8 +16,16 @@ void max7219_set_digit(uint8_t module, uint8_t digit);
 // Call max7219_refresh_digits() once all four modules are updated.
 void max7219_put_digit(uint8_t module, uint8_t digit);
 
+// Blank a module's digit rows in the frame buffer (rows 1-6).
+// Useful for suppressing a leading zero.
+void max7219_put_blank(uint8_t module);
+
+// Set colon visibility.  Applied automatically during max7219_refresh_digits().
+// The colon appears as two pixels in the rightmost area of module 1 (between HH and MM).
+void max7219_set_colon(bool visible);
+
 // Push rows 2-7 (digit area) from the frame buffer to all modules at once.
-// Use after a batch of max7219_put_digit() calls to avoid intermediate states.
+// Also applies the current colon state.
 void max7219_refresh_digits(void);
 
 // Update the bottom-row seconds progress bar and flush row 8 immediately.

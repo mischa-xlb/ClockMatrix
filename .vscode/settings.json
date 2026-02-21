@@ -1,12 +1,13 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
-  "idf.currentSetup": "C:\\Users\\misch\\esp\\v5.1.5\\esp-idf",
+  "idf.currentSetup": "C:\\Users\\misch\\esp\\v5.3.1\\esp-idf",
   "idf.openOcdConfigs": [
-    "board/esp32s3-builtin.cfg"
+    "interface/ftdi/esp32_devkitj_v1.cfg",
+    "target/esp32.cfg"
   ],
   "idf.customExtraVars": {
-    "IDF_TARGET": "esp32s3"
+    "IDF_TARGET": "esp32"
   },
-  "idf.portWin": "COM10",
-  "idf.flashType": "JTAG"
+  "idf.portWin": "COM8",
+  "idf.flashType": "UART"
 }

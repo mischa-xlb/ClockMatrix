@@ -1,0 +1,3 @@
+# Increase HTTP server header buffer so browser requests don't get rejected.
+# Default is 512 bytes; modern browsers easily exceed that.
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=2048

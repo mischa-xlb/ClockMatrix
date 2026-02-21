@@ -1,4 +1,5 @@
 #include <string.h>
+#include <stdbool.h>
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -60,6 +61,7 @@ static const uint8_t FONT[10][6] = {
 // Rows 1-6 hold the digit pixel data.
 // ---------------------------------------------------------------------------
 static uint8_t fb[MAX7219_NUM_MODULES][8];
+static bool    s_colon = false;   // colon state applied during refresh_digits()
 
 static spi_device_handle_t spi_dev;
 
@@ -132,6 +134,13 @@ void max7219_init(void)
 {
     memset(fb, 0, sizeof(fb));
 
+    ESP_LOGI(TAG, "--- max7219_init begin ---");
+    ESP_LOGI(TAG, "Pins: MOSI=GPIO%d  CLK=GPIO%d  CS=GPIO%d",
+             MAX7219_PIN_MOSI, MAX7219_PIN_CLK, MAX7219_PIN_CS);
+    ESP_LOGI(TAG, "SPI host=%d  clock=%d Hz  modules=%d  reverse_chain=%d",
+             MAX7219_SPI_HOST, MAX7219_SPI_CLOCK,
+             MAX7219_NUM_MODULES, MAX7219_REVERSE_CHAIN);
+
     // -- SPI bus --
     spi_bus_config_t bus_cfg = {
         .mosi_io_num     = MAX7219_PIN_MOSI,
@@ -141,7 +150,9 @@ void max7219_init(void)
         .quadhd_io_num   = -1,
         .max_transfer_sz = MAX7219_NUM_MODULES * 2,
     };
+    ESP_LOGI(TAG, "Calling spi_bus_initialize...");
     ESP_ERROR_CHECK(spi_bus_initialize(MAX7219_SPI_HOST, &bus_cfg, SPI_DMA_CH_AUTO));
+    ESP_LOGI(TAG, "spi_bus_initialize OK");
 
     // -- SPI device (MAX7219 uses Mode 0, MSB first) --
     spi_device_interface_config_t dev_cfg = {
@@ -150,19 +161,30 @@ void max7219_init(void)
         .spics_io_num   = MAX7219_PIN_CS,
         .queue_size     = 1,
     };
+    ESP_LOGI(TAG, "Calling spi_bus_add_device...");
     ESP_ERROR_CHECK(spi_bus_add_device(MAX7219_SPI_HOST, &dev_cfg, &spi_dev));
+    ESP_LOGI(TAG, "spi_bus_add_device OK");
 
     // -- Wake up all modules --
+    ESP_LOGI(TAG, "Writing REG_DISP_TEST=0x00 (test OFF)...");
     max7219_write_all(REG_DISP_TEST,   0x00); // display test OFF
+    ESP_LOGI(TAG, "Writing REG_DECODE_MODE=0x00 (raw pixel)...");
     max7219_write_all(REG_DECODE_MODE, 0x00); // raw pixel mode (no BCD decode)
+    ESP_LOGI(TAG, "Writing REG_SCAN_LIMIT=0x07 (all 8 rows)...");
     max7219_write_all(REG_SCAN_LIMIT,  0x07); // scan all 8 rows
+    ESP_LOGI(TAG, "Writing REG_INTENSITY=0x%02X...", MAX7219_INTENSITY);
     max7219_write_all(REG_INTENSITY,   MAX7219_INTENSITY);
+    ESP_LOGI(TAG, "Writing REG_SHUTDOWN=0x01 (normal op)...");
     max7219_write_all(REG_SHUTDOWN,    0x01); // normal operation
+    ESP_LOGI(TAG, "Shutdown register written — modules should now be active");
 
     // Blank every row to start
+    ESP_LOGI(TAG, "Blanking all rows...");
     for (uint8_t r = 1; r <= 8; r++) {
+        ESP_LOGI(TAG, "  Blanking row %d...", r);
         max7219_write_all(r, 0x00);
     }
+    ESP_LOGI(TAG, "All rows blanked");
 
     ESP_LOGI(TAG, "Initialised %d module(s)", MAX7219_NUM_MODULES);
 }
@@ -176,8 +198,30 @@ void max7219_put_digit(uint8_t module, uint8_t digit)
     }
 }
 
+void max7219_put_blank(uint8_t module)
+{
+    if (module >= MAX7219_NUM_MODULES) return;
+    for (int i = 1; i <= 6; i++) {
+        fb[module][i] = 0x00;
+    }
+}
+
+void max7219_set_colon(bool visible)
+{
+    s_colon = visible;
+}
+
 void max7219_refresh_digits(void)
 {
+    // Apply colon state to module 1, rightmost two columns (bit 1 = 0x02).
+    // Rows fb[1][2] and fb[1][5] give a nicely spaced upper/lower dot pair.
+    // Clear first so toggling off actually removes the dots.
+    //fb[1][2] = (fb[1][2] & ~0x02u) | (s_colon ? 0x02u : 0x00u);
+    //fb[1][5] = (fb[1][5] & ~0x02u) | (s_colon ? 0x02u : 0x00u);
+
+    fb[1][2] = (fb[1][2] & ~0x01u) | (s_colon ? 0x01u : 0x00u);
+    fb[1][5] = (fb[1][5] & ~0x01u) | (s_colon ? 0x01u : 0x00u);
+
     // Flush only the digit rows (registers 2-7) in one pass.
     for (uint8_t r = 2; r <= 7; r++) {
         flush_row(r);

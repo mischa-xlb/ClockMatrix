@@ -15,3 +15,7 @@ bool wifi_manager_connect_sta(void);
 // This function blocks until valid credentials are submitted,
 // then saves them to NVS and reboots the device.
 void wifi_manager_start_portal(void);
+
+// Erase stored WiFi credentials from NVS and reboot into the setup portal.
+// Call this when the user requests a WiFi reset (e.g. long-press of BTN_WIFI).
+void wifi_manager_reset_credentials(void);
