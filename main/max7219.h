@@ -45,18 +45,28 @@ void max7219_set_intensity(uint8_t intensity);
 // Sentinel value for max7219_put_digit / animation functions: module shows blank.
 #define MAX7219_BLANK 10
 
-// Number of frames for each animation type (at 50 ms per frame).
-#define ANIM_FRAMES_SCROLL  6   // 300 ms: old digit slides down, new slides in from above
-#define ANIM_FRAMES_EXPLODE 7   // 350 ms: shrink → dot → explosion rings → blank
+// Number of frames for each animation type (at 50 ms per render tick;
+// actual frame duration = ANIM_TICKS_PER_FRAME * 50 ms).
+#define ANIM_FRAMES_SCROLL  6   // old digit slides down, new enters from above
+#define ANIM_FRAMES_EXPLODE 7   // shrink to dot, explosion rings, blank
+#define ANIM_FRAMES_DECAY   5   // columns fade out in scattered order, new digit appears
+#define ANIM_FRAMES_MELT    8   // pixels fall to heap at bottom, new digit rises from below
+#define ANIM_FRAMES_WIPER   6   // vertical bar sweeps left-to-right revealing new digit
+#define ANIM_FRAMES_BLINK   6   // old digit flickers out, new digit flickers in
+#define ANIM_FRAMES_BLEND   7   // cross-dissolve: old fades out centre-last, new fades in centre-first
 
-// Render one frame of the scroll animation into the frame buffer for `module`.
+// All animation functions write into the frame buffer for `module`.
 // old_digit / new_digit: 0-9 or MAX7219_BLANK.
-// frame: 1 .. ANIM_FRAMES_SCROLL  (caller advances each render tick).
+// frame: 1-based, advances each ANIM_TICKS_PER_FRAME render ticks.
 // Does NOT flush to hardware — call max7219_refresh_digits() afterwards.
-void max7219_anim_scroll(uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame);
+void max7219_anim_scroll  (uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame);
+void max7219_anim_explode (uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame);
+void max7219_anim_decay   (uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame);
+void max7219_anim_melt    (uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame);
+void max7219_anim_wiper   (uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame);
+void max7219_anim_blink   (uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame);
+void max7219_anim_blend   (uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame);
 
-// Render one frame of the explode animation into the frame buffer for `module`.
-// old_digit / new_digit: 0-9 or MAX7219_BLANK.
-// frame: 1 .. ANIM_FRAMES_EXPLODE.
-// Does NOT flush to hardware — call max7219_refresh_digits() afterwards.
-void max7219_anim_explode(uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame);
+// Draw `count` dots in the top row (row 0) of module 0, leftmost pixels.
+// Call after max7219_refresh_digits() — the digit flush does not touch row 0.
+void max7219_set_indicator(uint8_t count);

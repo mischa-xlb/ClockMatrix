@@ -394,3 +394,181 @@ void max7219_anim_explode(uint8_t module, uint8_t old_digit, uint8_t new_digit, 
             break;
     }
 }
+
+// ---------------------------------------------------------------------------
+// Decay: columns of the old digit disappear in a scattered order, then the
+// new digit snaps in.
+//
+// Column bit masks (bits [6:2] of each font byte):
+//   bit6=col0(left)  bit5=col1  bit4=col2(centre)  bit3=col3  bit2=col4(right)
+//
+// Frame 1: drop cols 1,3  (mask 0x54 keeps cols 0,2,4)
+// Frame 2: drop col 0 too (mask 0x14 keeps cols 2,4)
+// Frame 3: drop col 4     (mask 0x10 keeps only centre)
+// Frame 4: blank
+// Frame 5: new digit appears
+void max7219_anim_decay(uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame)
+{
+    if (module >= MAX7219_NUM_MODULES) return;
+    for (int r = 1; r <= 6; r++) fb[module][r] = 0;
+
+    static const uint8_t MASK[4] = { 0x54, 0x14, 0x10, 0x00 };
+
+    if (frame <= 4) {
+        uint8_t mask = MASK[frame - 1];
+        if (old_digit <= 9 && mask) {
+            for (int i = 0; i < 6; i++) {
+                fb[module][i + 1] = FONT[old_digit][i] & mask;
+            }
+        }
+    } else {
+        // Frame 5: new digit
+        if (new_digit <= 9) {
+            for (int i = 0; i < 6; i++) {
+                fb[module][i + 1] = FONT[new_digit][i];
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Melt: old digit pixels fall and pile up at the bottom row, then the new
+// digit rises from the bottom upward.
+//
+// Frames 1-4 (melt down): shift old digit down by (frame-1) rows.
+//   Rows that overflow row 6 are ORed into row 6, building a "heap".
+// Frames 5-8 (reform up): reveal new digit from the bottom — each step
+//   exposes two more rows of the font from the bottom.
+void max7219_anim_melt(uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame)
+{
+    if (module >= MAX7219_NUM_MODULES) return;
+    for (int r = 1; r <= 6; r++) fb[module][r] = 0;
+
+    if (frame <= 4) {
+        if (old_digit <= 9) {
+            int shift = frame - 1;
+            for (int i = 0; i < 6; i++) {
+                int target = 1 + i + shift;
+                if (target > 6) target = 6;  // pile at bottom
+                fb[module][target] |= FONT[old_digit][i];
+            }
+        }
+    } else {
+        // Reform: expose bottom rows of new digit, adding 2 rows per frame step.
+        int step = frame - 5;          // 0, 1, 2, 3
+        int start = 5 - step * 2;     // 5, 3, 1, -1
+        if (start < 0) start = 0;
+        if (new_digit <= 9) {
+            for (int i = start; i < 6; i++) {
+                fb[module][i + 1] = FONT[new_digit][i];
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Wiper: a vertical bar sweeps left-to-right.  Pixels to the left of the
+// bar show the new digit; pixels to the right show the old digit.
+//
+// Column bit masks: col0=0x40  col1=0x20  col2=0x10  col3=0x08  col4=0x04
+//
+// Frames 1-5: wiper at column (frame-1); left=new, right=old.
+// Frame 6:    full new digit (wiper gone).
+void max7219_anim_wiper(uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame)
+{
+    if (module >= MAX7219_NUM_MODULES) return;
+
+    static const uint8_t COL[5] = { 0x40, 0x20, 0x10, 0x08, 0x04 };
+
+    uint8_t new_mask  = 0;
+    uint8_t old_mask  = 0;
+    uint8_t wipe_mask = 0;
+
+    if (frame <= 5) {
+        int w = frame - 1;
+        for (int c = 0; c < w; c++)     new_mask  |= COL[c];
+        for (int c = w + 1; c < 5; c++) old_mask  |= COL[c];
+        wipe_mask = COL[w];
+    } else {
+        new_mask = 0x7C;  // all 5 columns
+    }
+
+    for (int r = 1; r <= 6; r++) {
+        uint8_t old_pix = (old_digit <= 9) ? (FONT[old_digit][r-1] & old_mask) : 0;
+        uint8_t new_pix = (new_digit <= 9) ? (FONT[new_digit][r-1] & new_mask) : 0;
+        fb[module][r] = old_pix | new_pix | wipe_mask;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Blink: old digit flickers on/off three times, then the new digit flickers in.
+//
+// Odd frames (1, 3, 5): old digit visible.
+// Even frames (2, 4):   blank.
+// Frame 5:              new digit visible.
+// Frame 6:              blank.
+// After animation ends: caller shows new digit steady.
+void max7219_anim_blink(uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame)
+{
+    if (module >= MAX7219_NUM_MODULES) return;
+    for (int r = 1; r <= 6; r++) fb[module][r] = 0;
+
+    if (frame <= 4) {
+        if (frame % 2 == 1 && old_digit <= 9) {
+            for (int i = 0; i < 6; i++) fb[module][i + 1] = FONT[old_digit][i];
+        }
+    } else if (frame == 5) {
+        if (new_digit <= 9) {
+            for (int i = 0; i < 6; i++) fb[module][i + 1] = FONT[new_digit][i];
+        }
+    }
+    // Frame 6: blank (already zeroed above)
+}
+
+// ---------------------------------------------------------------------------
+// Blend: old digit cross-dissolves into new via the centre column.
+//
+// Fade-out (old digit with progressively fewer columns):
+//   Frame 1: all cols (mask 0x7C)
+//   Frame 2: cols 0, 2, 4 only (mask 0x54)
+//   Frame 3: col 2 only / centre (mask 0x10)
+//   Frame 4: blank
+// Fade-in (new digit with progressively more columns):
+//   Frame 5: col 2 only (mask 0x10)
+//   Frame 6: cols 0, 2, 4 (mask 0x54)
+//   Frame 7: all cols (mask 0x7C)
+void max7219_anim_blend(uint8_t module, uint8_t old_digit, uint8_t new_digit, int frame)
+{
+    if (module >= MAX7219_NUM_MODULES) return;
+    for (int r = 1; r <= 6; r++) fb[module][r] = 0;
+
+    static const uint8_t BLEND_MASK[3] = { 0x7C, 0x54, 0x10 };
+
+    if (frame <= 3) {
+        uint8_t mask = BLEND_MASK[frame - 1];
+        if (old_digit <= 9) {
+            for (int i = 0; i < 6; i++) fb[module][i + 1] = FONT[old_digit][i] & mask;
+        }
+    } else if (frame == 4) {
+        // blank
+    } else {
+        uint8_t mask = BLEND_MASK[7 - frame];  // frame5->mask[2], 6->mask[1], 7->mask[0]
+        if (new_digit <= 9) {
+            for (int i = 0; i < 6; i++) fb[module][i + 1] = FONT[new_digit][i] & mask;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scene indicator: draw `count` pixels in the top row (register 1 = fb[][0])
+// of module 0, filling from the left.
+// ---------------------------------------------------------------------------
+void max7219_set_indicator(uint8_t count)
+{
+    uint8_t val = 0;
+    for (uint8_t i = 0; i < count && i < 8; i++) {
+        val |= (uint8_t)(0x80u >> i);
+    }
+    fb[0][0] = val;
+    flush_row(1);  // register 1 = fb row 0
+}

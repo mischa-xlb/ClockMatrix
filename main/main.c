@@ -26,12 +26,16 @@ static ds3231_handle_t         rtc_handle  = {0};
 static bool                    s_rtc_ok    = false;
 
 // ---------------------------------------------------------------------------
-// Scenes — add new entries before SCENE_COUNT to define future modes.
+// Scenes — order must match SCENE_NAMES[] in wifi_manager.c.
 // ---------------------------------------------------------------------------
 typedef enum {
-    SCENE_CLOCK = 0,
-    SCENE_SCROLL,    // digits slide: old moves down, new enters from above
-    SCENE_EXPLODE,   // digit shrinks to dot, explodes outward, new digit appears
+    SCENE_SCROLL = 0,   // old digit slides down, new enters from above
+    SCENE_EXPLODE,      // digit shrinks to dot, explodes outward
+    SCENE_DECAY,        // columns disappear in scattered order, new digit appears
+    SCENE_MELT,         // pixels fall to a heap, new digit reforms from below
+    SCENE_WIPER,        // vertical bar sweeps left-to-right revealing new digit
+    SCENE_BLINK,        // old digit flickers out, new digit flickers in
+    SCENE_BLEND,        // cross-dissolve through the centre column
     SCENE_COUNT
 } scene_t;
 
@@ -44,10 +48,11 @@ typedef enum {
     APPST_SET_MINUTE,
 } appst_t;
 
-static scene_t  g_scene   = SCENE_CLOCK;
-static appst_t  g_state   = APPST_NORMAL;
-static int      g_set_h   = 12;
-static int      g_set_m   = 0;
+static scene_t  g_scene      = SCENE_SCROLL;
+static uint8_t  g_scene_mask = 0xFF;   // loaded from NVS in app_main
+static appst_t  g_state      = APPST_NORMAL;
+static int      g_set_h      = 12;
+static int      g_set_m      = 0;
 
 // ---------------------------------------------------------------------------
 // Animation state (used by SCENE_SCROLL and SCENE_EXPLODE)
@@ -63,6 +68,94 @@ typedef struct {
 static mod_anim_t s_anim[MAX7219_NUM_MODULES];
 static uint8_t    s_displayed[MAX7219_NUM_MODULES]; // digit currently tracked on each module
 static bool       s_anim_initialised = false;       // false forces a silent init on first render
+
+// ---------------------------------------------------------------------------
+// Scene helpers
+// ---------------------------------------------------------------------------
+
+// 0-indexed position of `sc` among currently enabled scenes.
+static int scene_position(scene_t sc)
+{
+    int pos = 0;
+    for (int i = 0; i < (int)sc; i++) {
+        if (g_scene_mask & (1u << i)) pos++;
+    }
+    return pos;
+}
+
+static int count_enabled_scenes(void)
+{
+    int n = 0;
+    for (int i = 0; i < SCENE_COUNT; i++) {
+        if (g_scene_mask & (1u << i)) n++;
+    }
+    return n;
+}
+
+// Advance to the next enabled scene, wrapping around.
+static scene_t next_enabled_scene(scene_t current)
+{
+    for (int i = 1; i <= SCENE_COUNT; i++) {
+        scene_t candidate = (scene_t)((current + i) % SCENE_COUNT);
+        if (g_scene_mask & (1u << candidate)) return candidate;
+    }
+    return current;  // all others disabled — stay on current
+}
+
+// First enabled scene in enum order.
+static scene_t first_enabled_scene(void)
+{
+    for (int i = 0; i < SCENE_COUNT; i++) {
+        if (g_scene_mask & (1u << i)) return (scene_t)i;
+    }
+    return SCENE_SCROLL;  // fallback
+}
+
+// Frame count for each scene type.
+static int max_frames_for_scene(scene_t sc)
+{
+    switch (sc) {
+        case SCENE_SCROLL:  return ANIM_FRAMES_SCROLL;
+        case SCENE_EXPLODE: return ANIM_FRAMES_EXPLODE;
+        case SCENE_DECAY:   return ANIM_FRAMES_DECAY;
+        case SCENE_MELT:    return ANIM_FRAMES_MELT;
+        case SCENE_WIPER:   return ANIM_FRAMES_WIPER;
+        case SCENE_BLINK:   return ANIM_FRAMES_BLINK;
+        case SCENE_BLEND:   return ANIM_FRAMES_BLEND;
+        default:            return ANIM_FRAMES_SCROLL;
+    }
+}
+
+// Render one animation frame for module `m` using the current scene.
+static void render_module_anim(int m)
+{
+    switch (g_scene) {
+        case SCENE_SCROLL:
+            max7219_anim_scroll (m, s_anim[m].old_digit, s_anim[m].new_digit, s_anim[m].frame);
+            break;
+        case SCENE_EXPLODE:
+            max7219_anim_explode(m, s_anim[m].old_digit, s_anim[m].new_digit, s_anim[m].frame);
+            break;
+        case SCENE_DECAY:
+            max7219_anim_decay  (m, s_anim[m].old_digit, s_anim[m].new_digit, s_anim[m].frame);
+            break;
+        case SCENE_MELT:
+            max7219_anim_melt   (m, s_anim[m].old_digit, s_anim[m].new_digit, s_anim[m].frame);
+            break;
+        case SCENE_WIPER:
+            max7219_anim_wiper  (m, s_anim[m].old_digit, s_anim[m].new_digit, s_anim[m].frame);
+            break;
+        case SCENE_BLINK:
+            max7219_anim_blink  (m, s_anim[m].old_digit, s_anim[m].new_digit, s_anim[m].frame);
+            break;
+        case SCENE_BLEND:
+            max7219_anim_blend  (m, s_anim[m].old_digit, s_anim[m].new_digit, s_anim[m].frame);
+            break;
+        default:
+            max7219_anim_scroll (m, s_anim[m].old_digit, s_anim[m].new_digit, s_anim[m].frame);
+            break;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // RTC helpers
@@ -186,10 +279,11 @@ static void render_time(int hour24, int minute, bool colon_on,
     max7219_refresh_digits();
 }
 
-// Render the animated clock scene (SCENE_SCROLL or SCENE_EXPLODE).
+// Render the current animated clock scene.
 // Called every render tick (50 ms).  Each animation frame is held for
 // ANIM_TICKS_PER_FRAME ticks before advancing.  The colon blinks on the
 // real second boundary and the seconds bar runs normally.
+// A dot indicator in the top-left shows which scene comes next in the cycle.
 static void render_animated(void)
 {
     time_t    now;
@@ -209,6 +303,13 @@ static void render_animated(void)
     bool    colon_on = (ti.tm_sec % 2 == 0);
     uint8_t sec      = (uint8_t)ti.tm_sec;
 
+    // Compute scene indicator: dots = 1-indexed position of the NEXT scene
+    // in the enabled-scene cycle (so pressing MODE shows that many dots next).
+    int total     = count_enabled_scenes();
+    int cur_pos   = scene_position(g_scene);
+    int next_pos  = (total > 1) ? (cur_pos + 1) % total : cur_pos;
+    uint8_t dots  = (uint8_t)(next_pos + 1);
+
     // First call after a scene switch: show current time immediately, no animation.
     if (!s_anim_initialised) {
         memcpy(s_displayed, want, sizeof(want));
@@ -221,6 +322,7 @@ static void render_animated(void)
         max7219_set_colon(colon_on);
         max7219_refresh_digits();
         max7219_set_seconds_bar(sec);
+        max7219_set_indicator(dots);
         return;
     }
 
@@ -236,17 +338,11 @@ static void render_animated(void)
         }
     }
 
-    int max_frames = (g_scene == SCENE_SCROLL) ? ANIM_FRAMES_SCROLL : ANIM_FRAMES_EXPLODE;
+    int max_frames = max_frames_for_scene(g_scene);
 
     for (int m = 0; m < MAX7219_NUM_MODULES; m++) {
         if (s_anim[m].active) {
-            // Render the current frame (re-drawn every tick while it is held).
-            if (g_scene == SCENE_SCROLL) {
-                max7219_anim_scroll(m, s_anim[m].old_digit, s_anim[m].new_digit, s_anim[m].frame);
-            } else {
-                max7219_anim_explode(m, s_anim[m].old_digit, s_anim[m].new_digit, s_anim[m].frame);
-            }
-            // Advance to the next frame only after ANIM_TICKS_PER_FRAME ticks.
+            render_module_anim(m);
             if (++s_anim[m].tick >= ANIM_TICKS_PER_FRAME) {
                 s_anim[m].tick = 0;
                 s_anim[m].frame++;
@@ -255,7 +351,6 @@ static void render_animated(void)
                 }
             }
         } else {
-            // No animation — paint the current digit.
             if (s_displayed[m] == MAX7219_BLANK) max7219_put_blank(m);
             else                                  max7219_put_digit(m, s_displayed[m]);
         }
@@ -264,47 +359,33 @@ static void render_animated(void)
     max7219_set_colon(colon_on);
     max7219_refresh_digits();
     max7219_set_seconds_bar(sec);
+    max7219_set_indicator(dots);
 }
 
 static void render(bool blink_on)
 {
-    time_t    now;
-    struct tm ti;
-    time(&now);
-    localtime_r(&now, &ti);
-
-    switch (g_scene) {
-        case SCENE_CLOCK:
-        default:
-            switch (g_state) {
-                case APPST_NORMAL:
-                    render_time(ti.tm_hour, ti.tm_min,
-                                (ti.tm_sec % 2 == 0),   // colon blinks each second
-                                false, false);
-                    max7219_set_seconds_bar((uint8_t)ti.tm_sec);
-                    break;
-
-                case APPST_SET_HOUR:
-                    render_time(g_set_h, g_set_m,
-                                true,               // colon steady while editing
-                                !blink_on, false);  // hour digits blink
-                    max7219_set_seconds_bar(0);     // blank bar while editing
-                    break;
-
-                case APPST_SET_MINUTE:
-                    render_time(g_set_h, g_set_m,
-                                true,
-                                false, !blink_on);  // minute digits blink
-                    max7219_set_seconds_bar(0);
-                    break;
-            }
-            break;
-
-        case SCENE_SCROLL:
-        case SCENE_EXPLODE:
-            render_animated();
-            break;
+    if (g_state != APPST_NORMAL) {
+        // Time-set mode: static blinking display regardless of the active scene.
+        switch (g_state) {
+            case APPST_SET_HOUR:
+                render_time(g_set_h, g_set_m,
+                            true,               // colon steady while editing
+                            !blink_on, false);  // hour digits blink
+                max7219_set_seconds_bar(0);     // blank bar while editing
+                break;
+            case APPST_SET_MINUTE:
+                render_time(g_set_h, g_set_m,
+                            true,
+                            false, !blink_on);  // minute digits blink
+                max7219_set_seconds_bar(0);
+                break;
+            default:
+                break;
+        }
+        return;
     }
+
+    render_animated();
 }
 
 // ---------------------------------------------------------------------------
@@ -333,11 +414,10 @@ static void handle_button(btn_event_t evt)
                 ESP_LOGI(TAG, "Entering time-set mode");
             }
             if (evt == BTN_EVT_MODE_SHORT) {
-                // Advance to the next scene (wraps around)
-                g_scene = (scene_t)((g_scene + 1) % SCENE_COUNT);
+                g_scene = next_enabled_scene(g_scene);
                 s_anim_initialised = false;   // reset animation state for new scene
                 max7219_clear_all();
-                ESP_LOGI(TAG, "Scene → %d", g_scene);
+                ESP_LOGI(TAG, "Scene -> %d (mask 0x%02X)", (int)g_scene, g_scene_mask);
             }
             if (evt == BTN_EVT_MODE_LONG) {
                 // No action in normal mode
@@ -393,8 +473,10 @@ static void handle_button(btn_event_t evt)
 static void render_task(void *arg)
 {
     uint64_t blink_at    = 0;
+    uint64_t scene_at    = 0;   // timestamp when the current scene started
     bool     blink_on    = true;
     uint8_t  prev_bright = 255;
+    scene_t  prev_scene  = g_scene;
 
     while (1) {
         uint64_t now_us = esp_timer_get_time();
@@ -407,6 +489,26 @@ static void render_task(void *arg)
 
         // Handle any pending button events
         handle_button(inputs_get_event());
+
+        // If the user pressed MODE, reset the auto-advance timer so the new
+        // scene gets a full interval before being replaced automatically.
+        if (g_scene != prev_scene) {
+            scene_at   = now_us;
+            prev_scene = g_scene;
+        }
+
+#if SCENE_AUTO_ADVANCE_MS > 0
+        // Auto-advance scene every SCENE_AUTO_ADVANCE_MS (normal mode only).
+        if (g_state == APPST_NORMAL &&
+            now_us - scene_at >= (uint64_t)SCENE_AUTO_ADVANCE_MS * 1000ULL) {
+            scene_at           = now_us;
+            g_scene            = next_enabled_scene(g_scene);
+            prev_scene         = g_scene;
+            s_anim_initialised = false;
+            max7219_clear_all();
+            ESP_LOGI(TAG, "Auto scene -> %d", (int)g_scene);
+        }
+#endif
 
         // Update display brightness from LDR only when it changes
         uint8_t bright = inputs_get_brightness();
@@ -431,9 +533,14 @@ void app_main(void)
     ESP_LOGI(TAG, ">>> max7219_clear_all");
     max7219_clear_all();
     ESP_LOGI(TAG, ">>> wifi_manager_init");
-    wifi_manager_init();
+    wifi_manager_init();  // inits NVS — must come before get_scene_mask
     ESP_LOGI(TAG, ">>> inputs_init");
     inputs_init();
+
+    // Load scene enable mask from NVS and pick the first enabled scene.
+    g_scene_mask = wifi_manager_get_scene_mask();
+    g_scene      = first_enabled_scene();
+    ESP_LOGI(TAG, "Scene mask: 0x%02X  initial scene: %d", g_scene_mask, (int)g_scene);
 
     // Set timezone early so that mktime() inside ds3231_sync_system_time()
     // correctly converts the RTC's local time to a UTC epoch value.

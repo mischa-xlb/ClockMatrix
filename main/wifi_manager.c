@@ -18,9 +18,16 @@
 
 static const char *TAG = "wifi_mgr";
 
-#define NVS_NAMESPACE  "wifi_cfg"
-#define NVS_KEY_SSID   "ssid"
-#define NVS_KEY_PASS   "pass"
+#define NVS_NAMESPACE       "wifi_cfg"
+#define NVS_KEY_SSID        "ssid"
+#define NVS_KEY_PASS        "pass"
+#define NVS_KEY_SCENE_MASK  "scene_mask"
+
+// Scene names must match the scene_t enum order in main.c.
+static const char *SCENE_NAMES[] = {
+    "Scroll", "Explode", "Decay", "Melt", "Wiper", "Blink", "Blend"
+};
+#define NUM_SCENES  7
 
 #define BIT_CONNECTED  BIT0
 #define BIT_FAILED     BIT1
@@ -55,6 +62,31 @@ static void save_credentials(const char *ssid, const char *pass)
     ESP_ERROR_CHECK(nvs_commit(h));
     nvs_close(h);
     ESP_LOGI(TAG, "Credentials saved for SSID: %s", ssid);
+}
+
+// ---------------------------------------------------------------------------
+// Scene mask NVS helpers
+// ---------------------------------------------------------------------------
+
+uint8_t wifi_manager_get_scene_mask(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &h) != ESP_OK) return 0xFF;
+    uint8_t mask = 0xFF;
+    nvs_get_u8(h, NVS_KEY_SCENE_MASK, &mask);  // leaves mask unchanged if key absent
+    nvs_close(h);
+    return (mask == 0) ? 0xFF : mask;           // treat all-zero as "all enabled"
+}
+
+void wifi_manager_set_scene_mask(uint8_t mask)
+{
+    if (mask == 0) mask = 0xFF;
+    nvs_handle_t h;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_set_u8(h, NVS_KEY_SCENE_MASK, mask);
+    nvs_commit(h);
+    nvs_close(h);
+    ESP_LOGI(TAG, "Scene mask saved: 0x%02X", mask);
 }
 
 // ---------------------------------------------------------------------------
@@ -125,30 +157,50 @@ static void sta_event_handler(void *arg, esp_event_base_t base,
 // Portal HTTP handlers
 // ---------------------------------------------------------------------------
 
-static const char PORTAL_HTML[] =
+// Static HTML parts — split so checkboxes can be injected between them.
+static const char PORTAL_PART1[] =
     "<!DOCTYPE html><html>"
     "<head><meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<title>ClockMatrix Setup</title>"
     "<style>"
     "body{font-family:sans-serif;max-width:400px;margin:40px auto;padding:0 20px}"
-    "h2{color:#333}"
+    "h2,h3{color:#333}"
     "label{display:block;margin-top:12px;color:#555}"
-    "input{width:100%;padding:8px;margin-top:4px;box-sizing:border-box;"
-          "border:1px solid #ccc;border-radius:4px;font-size:15px}"
+    "input[type=text],input[type=password]{width:100%;padding:8px;margin-top:4px;"
+    "box-sizing:border-box;border:1px solid #ccc;border-radius:4px;font-size:15px}"
     "button{margin-top:20px;width:100%;padding:12px;background:#0070f3;"
-            "color:#fff;border:none;border-radius:4px;font-size:16px;cursor:pointer}"
+    "color:#fff;border:none;border-radius:4px;font-size:16px;cursor:pointer}"
     "</style></head>"
     "<body><h2>ClockMatrix WiFi Setup</h2>"
     "<form method='POST' action='/save'>"
-    "<label>WiFi SSID<input name='ssid' type='text' placeholder='Network name' required></label>"
-    "<label>Password<input name='pass' type='password' placeholder='Leave blank for open network'></label>"
+    "<label>WiFi SSID"
+    "<input name='ssid' type='text' placeholder='Network name' required></label>"
+    "<label>Password"
+    "<input name='pass' type='password' placeholder='Leave blank for open network'></label>"
+    "<h3>Animation Scenes</h3>";
+
+static const char PORTAL_PART2[] =
     "<button type='submit'>Save &amp; Reboot</button>"
     "</form></body></html>";
 
 static esp_err_t root_handler(httpd_req_t *req)
 {
+    uint8_t mask = wifi_manager_get_scene_mask();
+
     httpd_resp_set_type(req, "text/html");
-    httpd_resp_sendstr(req, PORTAL_HTML);
+    httpd_resp_send_chunk(req, PORTAL_PART1, HTTPD_RESP_USE_STRLEN);
+
+    char cb[128];
+    for (int i = 0; i < NUM_SCENES; i++) {
+        bool en = (mask >> i) & 1;
+        snprintf(cb, sizeof(cb),
+            "<label><input name='sc%d' type='checkbox' value='1'%s> %s</label>",
+            i, en ? " checked" : "", SCENE_NAMES[i]);
+        httpd_resp_send_chunk(req, cb, HTTPD_RESP_USE_STRLEN);
+    }
+
+    httpd_resp_send_chunk(req, PORTAL_PART2, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, NULL, 0);  // end chunked response
     return ESP_OK;
 }
 
@@ -173,6 +225,17 @@ static esp_err_t save_handler(httpd_req_t *req)
     }
 
     save_credentials(ssid, pass);
+
+    // Parse scene-enable checkboxes (only present in POST body when checked).
+    uint8_t new_mask = 0;
+    for (int i = 0; i < NUM_SCENES; i++) {
+        char key[5];
+        snprintf(key, sizeof(key), "sc%d", i);
+        char val[4] = {0};
+        extract_field(body, key, val, sizeof(val));
+        if (val[0] == '1') new_mask |= (uint8_t)(1u << i);
+    }
+    wifi_manager_set_scene_mask(new_mask);  // 0 -> all-enabled handled inside
 
     httpd_resp_set_type(req, "text/html");
     httpd_resp_sendstr(req,

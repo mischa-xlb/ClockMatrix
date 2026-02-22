@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdint.h>
 #include <stdbool.h>
 
 // Initialise NVS, the TCP/IP stack and the default event loop.
@@ -19,3 +20,9 @@ void wifi_manager_start_portal(void);
 // Erase stored WiFi credentials from NVS and reboot into the setup portal.
 // Call this when the user requests a WiFi reset (e.g. long-press of BTN_WIFI).
 void wifi_manager_reset_credentials(void);
+
+// Read/write the scene-enable bitmask from NVS.
+// Bit N = 1 means scene N is included in the cycling loop.
+// Default (key absent or all-zero) returns 0xFF (all scenes enabled).
+uint8_t wifi_manager_get_scene_mask(void);
+void    wifi_manager_set_scene_mask(uint8_t mask);

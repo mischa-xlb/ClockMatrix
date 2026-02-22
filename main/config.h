@@ -79,8 +79,8 @@
 //   BTN_MODE short press : next field in time-set, or next scene in clock mode
 //   BTN_MODE long press  : cancel time-set without saving
 // ---------------------------------------------------------------------------
-#define BTN_WIFI_PIN   25   // GPIO 25 — supports internal pull-up on classic ESP32
-#define BTN_MODE_PIN   32   //
+#define BTN_WIFI_PIN   22   // 
+#define BTN_MODE_PIN   21   //
 // NOTE: GPIO 34-39 on classic ESP32 are input-only pads with NO hardware
 // pull-up/pull-down support.  Using them for buttons causes the pin to float,
 // which can trigger false long-press events (WiFi reset / reboot loop).
@@ -102,4 +102,11 @@
 //   2 = 100 ms/frame (scroll 600 ms, explode 700 ms)
 //   3 = 150 ms/frame (scroll 900 ms, explode 1050 ms)
 // ---------------------------------------------------------------------------
-#define ANIM_TICKS_PER_FRAME  10
+#define ANIM_TICKS_PER_FRAME  6
+
+// ---------------------------------------------------------------------------
+// Scene auto-advance interval.
+// The scene cycles to the next enabled scene after this many milliseconds.
+// Set to 0 to disable auto-advance (manual MODE button only).
+// ---------------------------------------------------------------------------
+#define SCENE_AUTO_ADVANCE_MS  60000   // 60 seconds
