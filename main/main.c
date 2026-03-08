@@ -537,7 +537,8 @@ void app_main(void)
     ESP_LOGI(TAG, ">>> inputs_init");
     inputs_init();
 
-    // Load scene enable mask from NVS and pick the first enabled scene.
+    // Load display rotation and scene settings from NVS.
+    max7219_set_rotate(wifi_manager_get_rotate_180());
     g_scene_mask = wifi_manager_get_scene_mask();
     g_scene      = first_enabled_scene();
     ESP_LOGI(TAG, "Scene mask: 0x%02X  initial scene: %d", g_scene_mask, (int)g_scene);

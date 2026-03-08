@@ -64,6 +64,16 @@ static uint8_t fb[MAX7219_NUM_MODULES][8];
 static bool    s_colon = false;   // colon state applied during refresh_digits()
 
 static spi_device_handle_t spi_dev;
+static bool s_rotate_180 = MAX7219_ROTATE_180;  // runtime override via max7219_set_rotate()
+
+// Reverse the bit order of a byte (used for 180° display rotation).
+static uint8_t reverse_bits(uint8_t b)
+{
+    b = (uint8_t)(((b & 0xF0u) >> 4) | ((b & 0x0Fu) << 4));
+    b = (uint8_t)(((b & 0xCCu) >> 2) | ((b & 0x33u) << 2));
+    b = (uint8_t)(((b & 0xAAu) >> 1) | ((b & 0x55u) << 1));
+    return b;
+}
 
 // ---------------------------------------------------------------------------
 // Low-level: send one 16-bit word per module in a single CS-low transaction.
@@ -105,13 +115,29 @@ static void flush_row(uint8_t row_reg)
     int row = row_reg - 1; // 0-indexed into fb
 
     for (int i = 0; i < MAX7219_NUM_MODULES; i++) {
+        int     mod;
+        uint8_t data;
+
+        if (s_rotate_180) {
+            // 180° rotation: flip module order relative to REVERSE_CHAIN,
+            // mirror rows top-to-bottom, and reverse bits left-to-right.
 #if MAX7219_REVERSE_CHAIN
-        int mod = i;                           // leftmost module first in buf
+            mod = (MAX7219_NUM_MODULES - 1) - i;
 #else
-        int mod = (MAX7219_NUM_MODULES - 1) - i; // rightmost module first in buf
+            mod = i;
 #endif
+            data = reverse_bits(fb[mod][7 - row]);
+        } else {
+#if MAX7219_REVERSE_CHAIN
+            mod = i;
+#else
+            mod = (MAX7219_NUM_MODULES - 1) - i;
+#endif
+            data = fb[mod][row];
+        }
+
         buf[i * 2]     = row_reg;
-        buf[i * 2 + 1] = fb[mod][row];
+        buf[i * 2 + 1] = data;
     }
     spi_send(buf, sizeof(buf));
 }
@@ -563,6 +589,11 @@ void max7219_anim_blend(uint8_t module, uint8_t old_digit, uint8_t new_digit, in
 // Scene indicator: draw `count` pixels in the top row (register 1 = fb[][0])
 // of module 0, filling from the left.
 // ---------------------------------------------------------------------------
+void max7219_set_rotate(bool rotate)
+{
+    s_rotate_180 = rotate;
+}
+
 void max7219_set_indicator(uint8_t count)
 {
     uint8_t val = 0;

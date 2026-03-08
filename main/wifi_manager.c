@@ -22,6 +22,7 @@ static const char *TAG = "wifi_mgr";
 #define NVS_KEY_SSID        "ssid"
 #define NVS_KEY_PASS        "pass"
 #define NVS_KEY_SCENE_MASK  "scene_mask"
+#define NVS_KEY_ROTATE_180  "rotate180"
 
 // Scene names must match the scene_t enum order in main.c.
 static const char *SCENE_NAMES[] = {
@@ -62,6 +63,30 @@ static void save_credentials(const char *ssid, const char *pass)
     ESP_ERROR_CHECK(nvs_commit(h));
     nvs_close(h);
     ESP_LOGI(TAG, "Credentials saved for SSID: %s", ssid);
+}
+
+// ---------------------------------------------------------------------------
+// Rotation NVS helpers
+// ---------------------------------------------------------------------------
+
+bool wifi_manager_get_rotate_180(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &h) != ESP_OK) return MAX7219_ROTATE_180;
+    uint8_t val = MAX7219_ROTATE_180;  // default from config.h if key absent
+    nvs_get_u8(h, NVS_KEY_ROTATE_180, &val);
+    nvs_close(h);
+    return (bool)val;
+}
+
+void wifi_manager_set_rotate_180(bool rotate)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_set_u8(h, NVS_KEY_ROTATE_180, (uint8_t)rotate);
+    nvs_commit(h);
+    nvs_close(h);
+    ESP_LOGI(TAG, "Rotate 180 saved: %d", (int)rotate);
 }
 
 // ---------------------------------------------------------------------------
@@ -199,6 +224,15 @@ static esp_err_t root_handler(httpd_req_t *req)
         httpd_resp_send_chunk(req, cb, HTTPD_RESP_USE_STRLEN);
     }
 
+    // Display options
+    bool rot = wifi_manager_get_rotate_180();
+    char rot_cb[96];
+    snprintf(rot_cb, sizeof(rot_cb),
+        "<h3>Display</h3>"
+        "<label><input name='rot180' type='checkbox' value='1'%s> Rotate 180&deg;</label>",
+        rot ? " checked" : "");
+    httpd_resp_send_chunk(req, rot_cb, HTTPD_RESP_USE_STRLEN);
+
     httpd_resp_send_chunk(req, PORTAL_PART2, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, NULL, 0);  // end chunked response
     return ESP_OK;
@@ -236,6 +270,10 @@ static esp_err_t save_handler(httpd_req_t *req)
         if (val[0] == '1') new_mask |= (uint8_t)(1u << i);
     }
     wifi_manager_set_scene_mask(new_mask);  // 0 -> all-enabled handled inside
+
+    char rot_val[4] = {0};
+    extract_field(body, "rot180", rot_val, sizeof(rot_val));
+    wifi_manager_set_rotate_180(rot_val[0] == '1');
 
     httpd_resp_set_type(req, "text/html");
     httpd_resp_sendstr(req,

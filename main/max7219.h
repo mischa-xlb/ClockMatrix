@@ -70,3 +70,9 @@ void max7219_anim_blend   (uint8_t module, uint8_t old_digit, uint8_t new_digit,
 // Draw `count` dots in the top row (row 0) of module 0, leftmost pixels.
 // Call after max7219_refresh_digits() — the digit flush does not touch row 0.
 void max7219_set_indicator(uint8_t count);
+
+// Enable or disable 180° output rotation at runtime.
+// When enabled, module order, row order, and bit order are all reversed so the
+// display reads correctly when physically mounted upside-down.
+// Default comes from MAX7219_ROTATE_180 in config.h; call this to override.
+void max7219_set_rotate(bool rotate);

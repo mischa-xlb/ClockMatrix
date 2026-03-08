@@ -46,6 +46,7 @@
 // (i.e. DIN enters from the right side of the module strip).
 // Flip this if your digits appear in the wrong order.
 #define MAX7219_REVERSE_CHAIN  1
+#define MAX7219_ROTATE_180     1   // Set to 1 if the display is physically rotated 180°
 
 // ---------------------------------------------------------------------------
 // WiFi provisioning

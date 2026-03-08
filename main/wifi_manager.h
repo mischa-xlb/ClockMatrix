@@ -21,6 +21,11 @@ void wifi_manager_start_portal(void);
 // Call this when the user requests a WiFi reset (e.g. long-press of BTN_WIFI).
 void wifi_manager_reset_credentials(void);
 
+// Read/write the display 180° rotation flag from NVS.
+// Default when the key is absent: compile-time MAX7219_ROTATE_180 from config.h.
+bool wifi_manager_get_rotate_180(void);
+void wifi_manager_set_rotate_180(bool rotate);
+
 // Read/write the scene-enable bitmask from NVS.
 // Bit N = 1 means scene N is included in the cycling loop.
 // Default (key absent or all-zero) returns 0xFF (all scenes enabled).
