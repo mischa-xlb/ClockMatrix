@@ -212,6 +212,12 @@ void max7219_init(void)
     }
     ESP_LOGI(TAG, "All rows blanked");
 
+    // Brief display-test flash (all LEDs on for ~300 ms) to confirm hardware is alive.
+    max7219_write_all(REG_DISP_TEST, 0x01);
+    vTaskDelay(pdMS_TO_TICKS(300));
+    max7219_write_all(REG_DISP_TEST, 0x00);
+    ESP_LOGI(TAG, "Display test done");
+
     ESP_LOGI(TAG, "Initialised %d module(s)", MAX7219_NUM_MODULES);
 }
 

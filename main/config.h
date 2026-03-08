@@ -2,16 +2,33 @@
 
 // ---------------------------------------------------------------------------
 // MAX7219 SPI pin assignments
-// Wiring: ESP32-S3 -> Hailege 4-in-1 8x8 module
-//   GPIO 7  -> DIN
-//   GPIO 6  -> CLK
-//   GPIO 5  -> CS
 // ---------------------------------------------------------------------------
 
-// new esp32 module
-#define MAX7219_PIN_MOSI    19
-#define MAX7219_PIN_CS      23
-#define MAX7219_PIN_CLK     5
+// ESP32 classic pins (kept for reference)
+#define MAX7219_PIN_MOSI_esp32Old   19
+#define MAX7219_PIN_CS_esp32Old     23
+#define MAX7219_PIN_CLK_esp32Old    5
+
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+// ESP32-S3 pins: CLK=47, CS=2, DIN=1
+#define MAX7219_PIN_MOSI    1
+#define MAX7219_PIN_CS      2
+#define MAX7219_PIN_CLK     47
+// Buttons and RTC/I2C are not connected on this S3 build — disable them.
+#define BUTTONS_DISABLED
+#define RTC_DISABLED
+#else
+// ESP32 classic pins
+#define MAX7219_PIN_MOSI    MAX7219_PIN_MOSI_esp32Old
+#define MAX7219_PIN_CS      MAX7219_PIN_CS_esp32Old
+#define MAX7219_PIN_CLK     MAX7219_PIN_CLK_esp32Old
+#endif
+
+
+// previous module
+// #define MAX7219_PIN_MOSI    1
+// #define MAX7219_PIN_CS      2
+// #define MAX7219_PIN_CLK     42
 
 
 // I2C (NeoKey, RTC, Display) Configuration
@@ -24,11 +41,6 @@
 #define RTC_I2C_ADDR            0x68        // DS3231/DS1307 typical
 
 
-
-// previous module
-// #define MAX7219_PIN_MOSI    1
-// #define MAX7219_PIN_CS      2
-// #define MAX7219_PIN_CLK     42
 
 // SPI host to use (SPI2_HOST = HSPI on ESP32-S3)
 #define MAX7219_SPI_HOST    SPI2_HOST

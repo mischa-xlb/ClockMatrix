@@ -41,6 +41,7 @@ static void inputs_task(void *arg)
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(POLL_MS));
 
+#ifndef BUTTONS_DISABLED
         // -- Buttons --
         for (int i = 0; i < 2; i++) {
             if (gpio_get_level(PIN[i]) == 0) {      // active-low: pressed
@@ -57,6 +58,7 @@ static void inputs_task(void *arg)
                 long_fired[i]  = false;
             }
         }
+#endif
 
         // -- LDR brightness (every 500 ms) --
         ldr_ms += POLL_MS;
@@ -82,6 +84,7 @@ void inputs_init(void)
 {
     s_evt_queue = xQueueCreate(16, sizeof(btn_event_t));
 
+#ifndef BUTTONS_DISABLED
     // GPIO buttons — internal pull-up, active low
     gpio_config_t btn_cfg = {
         .pin_bit_mask = (1ULL << BTN_WIFI_PIN) | (1ULL << BTN_MODE_PIN),
@@ -91,6 +94,7 @@ void inputs_init(void)
         .intr_type    = GPIO_INTR_DISABLE,
     };
     gpio_config(&btn_cfg);
+#endif
 
     // ADC1 for LDR
     adc_oneshot_unit_init_cfg_t unit_cfg = {

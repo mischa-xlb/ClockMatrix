@@ -20,10 +20,12 @@ static const char *TAG = "main";
 // ---------------------------------------------------------------------------
 // RTC state (file-scope so handle_button can also write to it)
 // ---------------------------------------------------------------------------
+#ifndef RTC_DISABLED
 static i2c_master_bus_handle_t s_i2c_bus   = NULL;
 static SemaphoreHandle_t       s_i2c_mutex = NULL;
 static ds3231_handle_t         rtc_handle  = {0};
 static bool                    s_rtc_ok    = false;
+#endif
 
 // ---------------------------------------------------------------------------
 // Scenes — order must match SCENE_NAMES[] in wifi_manager.c.
@@ -158,8 +160,9 @@ static void render_module_anim(int m)
 }
 
 // ---------------------------------------------------------------------------
-// RTC helpers
+// RTC helpers (compiled out when RTC_DISABLED)
 // ---------------------------------------------------------------------------
+#ifndef RTC_DISABLED
 
 // Initialise the I2C bus and DS3231.
 //
@@ -244,6 +247,8 @@ static void rtc_write_system_time(void)
         ESP_LOGW(TAG, "RTC write failed");
     }
 }
+
+#endif // RTC_DISABLED
 
 // ---------------------------------------------------------------------------
 // Render helpers
@@ -454,8 +459,10 @@ static void handle_button(btn_event_t evt)
                 settimeofday(&tv, NULL);
                 g_state = APPST_NORMAL;
                 ESP_LOGI(TAG, "Time set to %02d:%02d", g_set_h, g_set_m);
+#ifndef RTC_DISABLED
                 // Persist the manually-set time to the RTC
                 rtc_write_system_time();
+#endif
             }
             if (evt == BTN_EVT_MODE_LONG) {
                 g_state = APPST_NORMAL;         // cancel without saving
@@ -548,6 +555,7 @@ void app_main(void)
     setenv("TZ", NTP_TIMEZONE, 1);
     tzset();
 
+#ifndef RTC_DISABLED
     // Initialise RTC.  If it holds a valid, plausible time, load it into
     // the system clock now so the display shows the correct time immediately.
     ESP_LOGI(TAG, ">>> rtc_setup");
@@ -558,6 +566,7 @@ void app_main(void)
     } else {
         ESP_LOGI(TAG, "RTC not providing time yet — display will show 00:00 until NTP");
     }
+#endif
 
     // Start rendering now — display is live while WiFi connects and NTP syncs.
     xTaskCreate(render_task, "render", 4096, NULL, 4, NULL);
@@ -577,11 +586,13 @@ void app_main(void)
         ESP_LOGW(TAG, "NTP timed out — clock will sync in the background");
     }
 
+#ifndef RTC_DISABLED
     // Write the NTP-accurate time back to the RTC so the next boot can start
     // displaying immediately without waiting for a network connection.
     if (ntp_synced) {
         rtc_write_system_time();
     }
+#endif
 
     ESP_LOGI(TAG, "Init complete — render_task running");
     vTaskDelete(NULL);   // app_main task no longer needed; render_task runs forever

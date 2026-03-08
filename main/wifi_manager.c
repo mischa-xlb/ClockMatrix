@@ -226,7 +226,7 @@ static esp_err_t root_handler(httpd_req_t *req)
 
     // Display options
     bool rot = wifi_manager_get_rotate_180();
-    char rot_cb[96];
+    char rot_cb[128];
     snprintf(rot_cb, sizeof(rot_cb),
         "<h3>Display</h3>"
         "<label><input name='rot180' type='checkbox' value='1'%s> Rotate 180&deg;</label>",
