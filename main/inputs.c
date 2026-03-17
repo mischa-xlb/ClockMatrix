@@ -43,6 +43,7 @@ static void inputs_task(void *arg)
 
         // -- Buttons --
         for (int i = 0; i < 2; i++) {
+            if (PIN[i] == GPIO_NUM_NC) continue;    // pin not assigned
             if (gpio_get_level(PIN[i]) == 0) {      // active-low: pressed
                 press_count[i]++;
                 if (press_count[i] >= LONG_THRESH && !long_fired[i]) {
@@ -82,15 +83,20 @@ void inputs_init(void)
 {
     s_evt_queue = xQueueCreate(16, sizeof(btn_event_t));
 
-    // GPIO buttons — internal pull-up, active low
-    gpio_config_t btn_cfg = {
-        .pin_bit_mask = (1ULL << BTN_WIFI_PIN) | (1ULL << BTN_MODE_PIN),
-        .mode         = GPIO_MODE_INPUT,
-        .pull_up_en   = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type    = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&btn_cfg);
+    // GPIO buttons — internal pull-up, active low (skip NC pins)
+    uint64_t btn_mask = 0;
+    if (BTN_WIFI_PIN != GPIO_NUM_NC) btn_mask |= (1ULL << BTN_WIFI_PIN);
+    if (BTN_MODE_PIN != GPIO_NUM_NC) btn_mask |= (1ULL << BTN_MODE_PIN);
+    if (btn_mask) {
+        gpio_config_t btn_cfg = {
+            .pin_bit_mask = btn_mask,
+            .mode         = GPIO_MODE_INPUT,
+            .pull_up_en   = GPIO_PULLUP_ENABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type    = GPIO_INTR_DISABLE,
+        };
+        gpio_config(&btn_cfg);
+    }
 
     // ADC1 for LDR
     adc_oneshot_unit_init_cfg_t unit_cfg = {

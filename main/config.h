@@ -8,27 +8,45 @@
 //   GPIO 5  -> CS
 // ---------------------------------------------------------------------------
 
-// new esp32 module
-#define MAX7219_PIN_MOSI    19
-#define MAX7219_PIN_CS      23
-#define MAX7219_PIN_CLK     5
+// Set to 1 for the old ESP32 module, 0 for the new one
+#define OLD_MODULE  1
+
+#if OLD_MODULE
+   // previous module
+    #define MAX7219_PIN_MOSI    1
+    #define MAX7219_PIN_CS      2
+    #define MAX7219_PIN_CLK     42
+
+    // I2C not assigned on old module — RTC will be skipped at runtime
+    #define I2C_MASTER_NUM      I2C_NUM_0
+    #define I2C_MASTER_SCL_IO   GPIO_NUM_NC
+    #define I2C_MASTER_SDA_IO   GPIO_NUM_NC
+    #define I2C_MASTER_FREQ_HZ  400000
+    #define RTC_I2C_ADDR        0x68
+
+    // Buttons not wired on old module — assigned NC, inputs.c will skip them
+    #define BTN_WIFI_PIN        GPIO_NUM_NC
+    #define BTN_MODE_PIN        GPIO_NUM_NC
+#else
+    // new esp32 module
+    #define MAX7219_PIN_MOSI    19
+    #define MAX7219_PIN_CS      23
+    #define MAX7219_PIN_CLK     5
+    
+
+    // I2C (NeoKey, RTC, Display) Configuration
+    #define I2C_MASTER_NUM          I2C_NUM_0
+    #define I2C_MASTER_SCL_IO       GPIO_NUM_26
+    #define I2C_MASTER_SDA_IO       GPIO_NUM_18
+    #define I2C_MASTER_FREQ_HZ      400000      // 400kHz (can change to 100000 for 100kHz)
+
+    // I2C Device Addresses
+    #define RTC_I2C_ADDR            0x68        // DS3231/DS1307 typical
+    #define BTN_WIFI_PIN   22   // 
+    #define BTN_MODE_PIN   21   //
+#endif
 
 
-// I2C (NeoKey, RTC, Display) Configuration
-#define I2C_MASTER_NUM          I2C_NUM_0
-#define I2C_MASTER_SCL_IO       GPIO_NUM_26
-#define I2C_MASTER_SDA_IO       GPIO_NUM_18
-#define I2C_MASTER_FREQ_HZ      400000      // 400kHz (can change to 100000 for 100kHz)
-
-// I2C Device Addresses
-#define RTC_I2C_ADDR            0x68        // DS3231/DS1307 typical
-
-
-
-// previous module
-// #define MAX7219_PIN_MOSI    1
-// #define MAX7219_PIN_CS      2
-// #define MAX7219_PIN_CLK     42
 
 // SPI host to use (SPI2_HOST = HSPI on ESP32-S3)
 #define MAX7219_SPI_HOST    SPI2_HOST
@@ -79,8 +97,7 @@
 //   BTN_MODE short press : next field in time-set, or next scene in clock mode
 //   BTN_MODE long press  : cancel time-set without saving
 // ---------------------------------------------------------------------------
-#define BTN_WIFI_PIN   22   // 
-#define BTN_MODE_PIN   21   //
+
 // NOTE: GPIO 34-39 on classic ESP32 are input-only pads with NO hardware
 // pull-up/pull-down support.  Using them for buttons causes the pin to float,
 // which can trigger false long-press events (WiFi reset / reboot loop).
