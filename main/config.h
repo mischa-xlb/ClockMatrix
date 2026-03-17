@@ -65,6 +65,10 @@
 // Flip this if your digits appear in the wrong order.
 #define MAX7219_REVERSE_CHAIN  1
 
+// Set to 1 to rotate the entire display 180 degrees.
+// Use when the PCB is mounted upside-down.
+#define DISPLAY_ROTATE_180  1
+
 // ---------------------------------------------------------------------------
 // WiFi provisioning
 // On first boot (or when stored credentials fail) the clock starts an open
