@@ -9,10 +9,12 @@
 // ---------------------------------------------------------------------------
 
 // Set to 1 for the old ESP32 module, 0 for the new one
-#define OLD_MODULE  1
+#define OLD_MODULE  0
+#define NEWTON_MODULE 0
+#define ARTEM_MODULE 1
 
 #if OLD_MODULE
-   // previous module
+   // previous module`
     #define MAX7219_PIN_MOSI    1
     #define MAX7219_PIN_CS      2
     #define MAX7219_PIN_CLK     42
@@ -27,7 +29,9 @@
     // Buttons not wired on old module — assigned NC, inputs.c will skip them
     #define BTN_WIFI_PIN        GPIO_NUM_NC
     #define BTN_MODE_PIN        GPIO_NUM_NC
-#else
+#endif
+
+#if NEWTON_MODULE
     // new esp32 module
     #define MAX7219_PIN_MOSI    19
     #define MAX7219_PIN_CS      23
@@ -44,6 +48,30 @@
     #define RTC_I2C_ADDR            0x68        // DS3231/DS1307 typical
     #define BTN_WIFI_PIN   22   // 
     #define BTN_MODE_PIN   21   //
+#endif
+
+#if ARTEM_MODULE
+   // Classic ESP32 (non-S3) module
+    #define MAX7219_PIN_MOSI    27
+    #define MAX7219_PIN_CS      26
+    #define MAX7219_PIN_CLK     25
+
+    // I2C not assigned — RTC will be skipped at runtime
+    #define I2C_MASTER_NUM      I2C_NUM_0
+    #define I2C_MASTER_SCL_IO   GPIO_NUM_NC
+    #define I2C_MASTER_SDA_IO   GPIO_NUM_NC
+    #define I2C_MASTER_FREQ_HZ  400000
+    #define RTC_I2C_ADDR        0x68
+
+    // Buttons not wired — assigned NC, inputs.c will skip them
+    #define BTN_WIFI_PIN        GPIO_NUM_NC
+    #define BTN_MODE_PIN        GPIO_NUM_NC
+
+    // No LDR on this board. ADC1_CH3 = GPIO 39 on classic ESP32 (not GPIO 4
+    // like on ESP32-S3). With nothing connected the pin floats and maps to
+    // BRIGHTNESS_MIN. Disable LDR so brightness is held at a fixed level.
+    #define LDR_ENABLED         0
+
 #endif
 
 
@@ -108,13 +136,19 @@
 // ---------------------------------------------------------------------------
 // Light-dependent resistor (LDR) — automatic brightness control
 // Wiring: LDR between 3.3 V and ADC pin; 10 kΩ resistor between ADC pin and GND.
-// ADC1_CH3 = GPIO 4 on ESP32-S3.
+// ADC1_CH3 = GPIO 4 on ESP32-S3, but GPIO 39 on classic ESP32 — these differ!
 // Set LDR_INVERT 1 if your divider is the other way round (high reading = dark).
+// Set LDR_ENABLED 0 (per-module in the block above) to disable and hold a fixed
+// brightness level instead (useful when no LDR is wired).
 // ---------------------------------------------------------------------------
-#define LDR_ADC_CHANNEL  3     // ADC1_CH3 = GPIO 4
+#ifndef LDR_ENABLED
+#define LDR_ENABLED      1
+#endif
+#define LDR_ADC_CHANNEL  3     // ADC1_CH3 = GPIO 4 (ESP32-S3) / GPIO 39 (classic ESP32)
 #define LDR_INVERT       1
 #define BRIGHTNESS_MIN   1     // minimum intensity at night  (0–15)
 #define BRIGHTNESS_MAX   12    // maximum intensity in daylight (0–15)
+#define BRIGHTNESS_FIXED 8     // intensity used when LDR_ENABLED 0
 
 // ---------------------------------------------------------------------------
 // Animation speed

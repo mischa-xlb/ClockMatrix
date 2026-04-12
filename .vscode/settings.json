@@ -1,12 +1,12 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
-  "idf.currentSetup": "C:\\Users\\misch\\esp\\v5.3.1\\esp-idf",
+  "idf.currentSetup": "C:\\esp\\v5.5.3\\esp-idf",
   "idf.openOcdConfigs": [
-    "board/esp32s3-builtin.cfg"
+    "board/esp32-wrover-kit-3.3v.cfg"
   ],
   "idf.customExtraVars": {
-    "IDF_TARGET": "esp32s3"
+    "IDF_TARGET": "esp32"
   },
-  "idf.portWin": "COM6",
+  "idf.portWin": "COM8",
   "idf.flashType": "UART"
 }

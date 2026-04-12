@@ -17,7 +17,11 @@ static const char *TAG = "inputs";
 
 static QueueHandle_t               s_evt_queue;
 static adc_oneshot_unit_handle_t   s_adc_handle;
+#if LDR_ENABLED
 static volatile uint8_t            s_brightness = (BRIGHTNESS_MIN + BRIGHTNESS_MAX) / 2;
+#else
+static volatile uint8_t            s_brightness = BRIGHTNESS_FIXED;
+#endif
 
 static void push_event(btn_event_t evt)
 {
@@ -63,6 +67,7 @@ static void inputs_task(void *arg)
         ldr_ms += POLL_MS;
         if (ldr_ms >= 500) {
             ldr_ms = 0;
+#if LDR_ENABLED
             int raw = 0;
             if (adc_oneshot_read(s_adc_handle, (adc_channel_t)LDR_ADC_CHANNEL, &raw) == ESP_OK) {
                 // Exponential moving average: 15/16 old + 1/16 new
@@ -70,7 +75,10 @@ static void inputs_task(void *arg)
                 int mapped = LDR_INVERT ? (4095 - ldr_avg) : ldr_avg;
                 s_brightness = (uint8_t)(BRIGHTNESS_MIN +
                     (mapped * (BRIGHTNESS_MAX - BRIGHTNESS_MIN)) / 4095);
+                ESP_LOGD(TAG, "LDR raw=%d avg=%d mapped=%d brightness=%d",
+                         raw, ldr_avg, mapped, s_brightness);
             }
+#endif
         }
     }
 }
@@ -98,7 +106,8 @@ void inputs_init(void)
         gpio_config(&btn_cfg);
     }
 
-    // ADC1 for LDR
+    // ADC1 for LDR (skipped when LDR_ENABLED is 0)
+#if LDR_ENABLED
     adc_oneshot_unit_init_cfg_t unit_cfg = {
         .unit_id  = ADC_UNIT_1,
         .ulp_mode = ADC_ULP_MODE_DISABLE,
@@ -111,11 +120,17 @@ void inputs_init(void)
     };
     ESP_ERROR_CHECK(adc_oneshot_config_channel(
         s_adc_handle, (adc_channel_t)LDR_ADC_CHANNEL, &chan_cfg));
+#endif
 
     xTaskCreate(inputs_task, "inputs", 2048, NULL, 5, NULL);
 
-    ESP_LOGI(TAG, "Buttons: WiFi=GPIO%d  Mode=GPIO%d  LDR=ADC1_CH%d",
-             BTN_WIFI_PIN, BTN_MODE_PIN, LDR_ADC_CHANNEL);
+#if LDR_ENABLED
+    ESP_LOGI(TAG, "Buttons: WiFi=GPIO%d  Mode=GPIO%d  LDR=ADC1_CH%d  brightness=%d..%d",
+             BTN_WIFI_PIN, BTN_MODE_PIN, LDR_ADC_CHANNEL, BRIGHTNESS_MIN, BRIGHTNESS_MAX);
+#else
+    ESP_LOGI(TAG, "Buttons: WiFi=GPIO%d  Mode=GPIO%d  LDR=disabled  brightness=%d (fixed)",
+             BTN_WIFI_PIN, BTN_MODE_PIN, BRIGHTNESS_FIXED);
+#endif
 }
 
 btn_event_t inputs_get_event(void)

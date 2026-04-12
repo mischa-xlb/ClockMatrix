@@ -195,10 +195,17 @@ void max7219_init(void)
     max7219_write_all(REG_SHUTDOWN,    0x01); // normal operation
     ESP_LOGI(TAG, "Shutdown register written — modules should now be active");
 
+    // Display test: light every LED for 1 second to confirm SPI wiring.
+    // If nothing lights up, check MOSI/CLK/CS connections and pin assignments.
+    ESP_LOGI(TAG, "Display test ON — all LEDs should light for 1 second");
+    max7219_write_all(REG_DISP_TEST, 0x01);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    max7219_write_all(REG_DISP_TEST, 0x00);
+    ESP_LOGI(TAG, "Display test OFF");
+
     // Blank every row to start
     ESP_LOGI(TAG, "Blanking all rows...");
     for (uint8_t r = 1; r <= 8; r++) {
-        ESP_LOGI(TAG, "  Blanking row %d...", r);
         max7219_write_all(r, 0x00);
     }
     ESP_LOGI(TAG, "All rows blanked");

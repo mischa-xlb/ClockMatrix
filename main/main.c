@@ -322,7 +322,7 @@ static void render_animated(void)
         max7219_set_colon(colon_on);
         max7219_refresh_digits();
         max7219_set_seconds_bar(sec);
-        max7219_set_indicator(dots);
+        //max7219_set_indicator(dots);
         return;
     }
 
